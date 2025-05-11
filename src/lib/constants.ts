@@ -55,22 +55,10 @@ export const REGION_COORDINATES = {
 // 지도 마커 색상
 export const MARKER_COLORS = {
   '건설자원협회': '#4CAF50', // 녹색
-  '레미콘공장': '#2196F3',        // 파란색
-  '골재생산업체': '#FFC107',      // 노란색
+  '레미콘공장': '#2196F3',   // 파란색
+  '골재생산업체': '#FFC107', // 노란색
 };
 
-// 거리 계산 함수 (하버사인 공식 - 구면 좌표계에서의 두 점 사이 거리)
-export function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371e3; // 지구 반지름 (미터)
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // 미터 단위 거리
-}
+// 데이터 업로드 관련 상수
+export const FILE_SIZE_LIMIT = 10 * 1024 * 1024; // 10MB
+export const VALID_EXCEL_EXTENSIONS = ['.xlsx', '.xls'];

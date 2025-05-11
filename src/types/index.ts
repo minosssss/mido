@@ -40,6 +40,13 @@ export type PlaceFilter = {
   categories: Set<PlaceCategory>;
   radius: number;
   keyword?: string;
+  // 검색 모드: 'radius'(반경 모드) 또는 'viewport'(지도 영역 모드)
+  searchMode: 'radius' | 'viewport';
+  // 지도 경계 정보 (viewport 모드일 때 사용)
+  mapBounds?: {
+    sw: { lat: number; lng: number };
+    ne: { lat: number; lng: number };
+  };
 };
 
 export type Coordinates = {

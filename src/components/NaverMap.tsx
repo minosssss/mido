@@ -1,8 +1,8 @@
 // src/components/NaverMap.tsx
-import { useCallback, useEffect, useRef, useState, memo } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { Place, PlaceCategory } from '@/types';
 import { MARKER_COLORS } from '@/lib/constants';
-import { MapPin, Search } from 'lucide-react';
+import { Filter, MapPin, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 
 declare global {
@@ -19,6 +19,8 @@ interface NaverMapProps {
   selectedPlace: Place | null;
   onPlaceSelect: (place: Place) => void;
   searchRadius?: number;
+  searchMode: 'radius' | 'viewport';
+  onToggleMobileFilter?: () => void;
   onSearchInView?: (bounds: { sw: {lat: number, lng: number}, ne: {lat: number, lng: number} }) => void;
 }
 
@@ -85,17 +87,24 @@ function NaverMapComponent({
   places,
   selectedPlace,
   onPlaceSelect,
-  searchRadius = 1000,
+  searchRadius = 5000,
+  searchMode,
+  onToggleMobileFilter,
   onSearchInView,
 }: NaverMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const circleRef = useRef<any>(null);
+  const rectangleRef = useRef<any>(null);
   const myLocationMarkerRef = useRef<any>(null);
   const isInitializedRef = useRef<boolean>(false);
   const [loaded, setLoaded] = useState(false);
   const [mapCenter, setMapCenter] = useState(currentLocation); // 지도 중심 상태 추가
+  const [currentBounds, setCurrentBounds] = useState<{
+    sw: {lat: number, lng: number},
+    ne: {lat: number, lng: number}
+  } | null>(null);
   
   // 네이버 지도 스크립트 로드 - 최초 1회만 실행
   useEffect(() => {
@@ -131,8 +140,8 @@ function NaverMapComponent({
     const html = `
       <div style="position: relative;">
         <div style="
-          width: 18px;
-          height: 18px;
+          width: 20px;
+          height: 20px;
           background-color: #4285F4;
           border: 3px solid white;
           border-radius: 50%;
@@ -142,10 +151,10 @@ function NaverMapComponent({
         "></div>
         <div style="
           position: absolute;
-          top: -12px;
-          left: -12px;
-          width: 36px;
-          height: 36px;
+          top: -10px;
+          left: -10px;
+          width: 40px;
+          height: 40px;
           background-color: rgba(66, 133, 244, 0.2);
           border-radius: 50%;
           animation: pulse 2s infinite;
@@ -187,10 +196,13 @@ function NaverMapComponent({
         lng: center.lng() 
       });
       
-      // 반경 원 중심 업데이트
-      if (circleRef.current) {
+      // 반경 원 중심 업데이트 (반경 모드일 경우)
+      if (searchMode === 'radius' && circleRef.current) {
         circleRef.current.setCenter(center);
       }
+      
+      // bounds 정보 업데이트
+      updateCurrentBounds();
     });
     
     // 줌 변경 시 이벤트
@@ -200,13 +212,46 @@ function NaverMapComponent({
         lat: center.lat(), 
         lng: center.lng() 
       });
+      
+      // bounds 정보 업데이트
+      updateCurrentBounds();
     });
     
     // 지도 클릭 이벤트 (필요시)
     // naver.maps.Event.addListener(mapRef.current, 'click', (e) => {
     //   console.log('지도 클릭:', e.coord.lat(), e.coord.lng());
     // });
-  }, []);
+  }, [searchMode]);
+  
+  // bounds 정보 업데이트 함수
+  const updateCurrentBounds = useCallback(() => {
+    if (!mapRef.current || !window.naver) return;
+    
+    const bounds = mapRef.current.getBounds();
+    
+    // 경계 정보 추출
+    const boundInfo = {
+      sw: { 
+        lat: bounds.getSW().lat(), 
+        lng: bounds.getSW().lng() 
+      },
+      ne: { 
+        lat: bounds.getNE().lat(), 
+        lng: bounds.getNE().lng() 
+      }
+    };
+    
+    setCurrentBounds(boundInfo);
+    
+    // viewport 검색 모드일 때 사각형 영역 업데이트
+    if (searchMode === 'viewport' && rectangleRef.current) {
+      const { naver } = window;
+      rectangleRef.current.setBounds(new naver.maps.LatLngBounds(
+        new naver.maps.LatLng(boundInfo.sw.lat, boundInfo.sw.lng),
+        new naver.maps.LatLng(boundInfo.ne.lat, boundInfo.ne.lng)
+      ));
+    }
+  }, [searchMode]);
 
   // 지도 초기화 - 최초 로드 시에만 생성
   useEffect(() => {
@@ -233,7 +278,7 @@ function NaverMapComponent({
       
       // 반경 원 생성
       circleRef.current = new naver.maps.Circle({
-        map: mapRef.current,
+        map: searchMode === 'radius' ? mapRef.current : null, // 반경 모드일 때만 표시
         center: coord,
         radius: searchRadius,
         strokeColor: '#5347AA',
@@ -243,8 +288,23 @@ function NaverMapComponent({
         fillOpacity: 0.1,
       });
       
+      // 지도 영역 사각형 생성 (viewport 모드에서 사용)
+      const bounds = mapRef.current.getBounds();
+      rectangleRef.current = new naver.maps.Rectangle({
+        map: searchMode === 'viewport' ? mapRef.current : null, // viewport 모드일 때만 표시
+        bounds: bounds,
+        strokeColor: '#1E88E5',
+        strokeOpacity: 0.5,
+        strokeWeight: 2,
+        fillColor: '#1E88E5',
+        fillOpacity: 0.05,
+      });
+      
       // 지도 이벤트 설정
       setupMapEvents();
+      
+      // bounds 정보 초기화
+      updateCurrentBounds();
       
       isInitializedRef.current = true;
     }
@@ -257,10 +317,55 @@ function NaverMapComponent({
           circleRef.current.setMap(null);
           circleRef.current = null;
         }
+        if (rectangleRef.current) {
+          rectangleRef.current.setMap(null);
+          rectangleRef.current = null;
+        }
         markersRef.current.forEach(marker => marker.setMap(null));
       }
     };
-  }, [loaded, currentLocation, searchRadius, setupMapEvents]);
+  }, [loaded, currentLocation, searchRadius, setupMapEvents, updateCurrentBounds, searchMode]);
+  
+  // 검색 모드 변경 시 원/사각형 표시 업데이트
+  useEffect(() => {
+    if (!mapRef.current || !window.naver || !circleRef.current || !rectangleRef.current) return;
+    
+    // 반경 원 표시/숨김
+    circleRef.current.setMap(searchMode === 'radius' ? mapRef.current : null);
+    
+    // 지도 영역 사각형 표시/숨김
+    rectangleRef.current.setMap(searchMode === 'viewport' ? mapRef.current : null);
+    
+    // 현재 bounds 업데이트
+    updateCurrentBounds();
+  }, [searchMode, updateCurrentBounds]);
+  
+  // 반경 변경 시 원 크기 업데이트
+  useEffect(() => {
+    if (!circleRef.current) return;
+    
+    // searchRadius는 미터 단위이므로 그대로 사용
+    circleRef.current.setRadius(searchRadius);
+    
+    // 반경이 큰 경우 지도 줌 레벨 자동 조정
+    if (mapRef.current && window.naver) {
+      const radius = searchRadius / 1000; // km 단위로 변환
+      let newZoom = 14; // 기본 줌 레벨
+      
+      // 반경에 따른 적절한 줌 레벨 설정
+      if (radius > 50) newZoom = 8;      // 50km 초과
+      else if (radius > 30) newZoom = 9; // 30-50km
+      else if (radius > 20) newZoom = 10; // 20-30km
+      else if (radius > 10) newZoom = 11; // 10-20km
+      else if (radius > 5) newZoom = 12;  // 5-10km
+      else if (radius > 2) newZoom = 13;  // 2-5km
+      
+      // 현재 줌 레벨과 다른 경우에만 변경
+      if (mapRef.current.getZoom() !== newZoom) {
+        mapRef.current.setZoom(newZoom);
+      }
+    }
+  }, [searchRadius]);
   
   // 현재 위치 변경 시 반경 원도 함께 업데이트
   useEffect(() => {
@@ -271,15 +376,11 @@ function NaverMapComponent({
       currentLocation.lng
     );
     
-    // 반경 원 중심 업데이트
-    circleRef.current.setCenter(coord);
-    circleRef.current.setRadius(searchRadius);
-    
-    // 반경 원이 지도에 표시되어 있지 않다면 다시 표시
-    if (!circleRef.current.getMap()) {
-      circleRef.current.setMap(mapRef.current);
+    // 반경 모드일 때만 원 중심 업데이트
+    if (searchMode === 'radius') {
+      circleRef.current.setCenter(coord);
     }
-  }, [currentLocation, searchRadius]);
+  }, [currentLocation, searchMode]);
 
   // 탭 포커스 시 이벤트 리스너 추가
   useEffect(() => {
@@ -288,9 +389,12 @@ function NaverMapComponent({
         // 탭이 다시 활성화되었을 때 지도 인스턴스를 유지하고 강제 리사이즈
         window.naver?.maps?.Event.trigger(mapRef.current, 'resize');
         
-        // 반경 원이 제거되었다면 다시 표시
-        if (circleRef.current && !circleRef.current.getMap()) {
+        // 반경 원이나 사각형이 제거되었다면 다시 표시
+        if (circleRef.current && searchMode === 'radius' && !circleRef.current.getMap()) {
           circleRef.current.setMap(mapRef.current);
+        }
+        if (rectangleRef.current && searchMode === 'viewport' && !rectangleRef.current.getMap()) {
+          rectangleRef.current.setMap(mapRef.current);
         }
       }
     };
@@ -300,7 +404,7 @@ function NaverMapComponent({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [searchMode]);
   
   // 마커 업데이트 - 장소 목록이나 선택된 장소가 변경될 때만 실행
   useEffect(() => {
@@ -367,42 +471,26 @@ function NaverMapComponent({
     // 지도 중심 상태 업데이트
     setMapCenter(currentLocation);
     
-    // 반경 원 중심 업데이트
-    if (circleRef.current) {
+    // 반경 원 중심 업데이트 (반경 모드일 경우)
+    if (searchMode === 'radius' && circleRef.current) {
       circleRef.current.setCenter(coord);
-      circleRef.current.setRadius(searchRadius);
     }
-  }, [currentLocation, searchRadius]);
+    
+    // bounds 업데이트
+    updateCurrentBounds();
+  }, [currentLocation, searchMode, updateCurrentBounds]);
 
   // 현재 지도에서 검색 핸들러
   const handleSearchInCurrentView = useCallback(() => {
-    if (!mapRef.current || !window.naver) return;
+    if (!currentBounds) return;
     
-    const { naver } = window;
-    const bounds = mapRef.current.getBounds();
-    
-    // 경계 정보 추출
-    const boundInfo = {
-      sw: { 
-        lat: bounds.getSW().lat(), 
-        lng: bounds.getSW().lng() 
-      },
-      ne: { 
-        lat: bounds.getNE().lat(), 
-        lng: bounds.getNE().lng() 
-      }
-    };
-    
-    console.log('현재 지도 영역에서 검색:', boundInfo);
+    console.log('현재 지도 영역에서 검색:', currentBounds);
     
     // 상위 컴포넌트에 이벤트 전달
     if (onSearchInView) {
-      onSearchInView(boundInfo);
-    } else {
-      // 기본 동작 (알림)
-      alert(`현재 지도 영역 내에서 업체를 검색합니다.\n남서(${boundInfo.sw.lat.toFixed(4)}, ${boundInfo.sw.lng.toFixed(4)}) ~ 북동(${boundInfo.ne.lat.toFixed(4)}, ${boundInfo.ne.lng.toFixed(4)})`);
+      onSearchInView(currentBounds);
     }
-  }, [onSearchInView]);
+  }, [currentBounds, onSearchInView]);
   
   // 현재 위치 마커 생성 및 업데이트
   useEffect(() => {
@@ -437,25 +525,55 @@ function NaverMapComponent({
         </div>
       )}
       
+      {/* 모바일 필터 토글 버튼 */}
+      {onToggleMobileFilter && (
+        <Button 
+          variant="outline" 
+          className="absolute top-4 right-4 z-20 shadow-md lg:hidden"
+          onClick={onToggleMobileFilter}
+        >
+          <Filter className="h-4 w-4 mr-1" />
+          <span>필터</span>
+        </Button>
+      )}
+      
       {/* 현재 위치 버튼 */}
       <Button 
-        variant="outline" 
-        className="absolute bottom-24 right-4 z-20 shadow-md" 
+        variant="outline"
+        className="absolute border-accent-foreground bottom-10 right-4 z-20 shadow-md"
         onClick={recenter}
       >
         <MapPin className="h-4 w-4" />
       </Button>
       
-      {/* 현재 지도에서 검색 버튼 */}
-      <div className="absolute bottom-4 left-0 right-0 z-20 flex justify-center">
-        <Button 
-          variant="default" 
-          className="rounded-full px-6 py-2 shadow-md bg-blue-500 hover:bg-blue-600 text-white"
-          onClick={handleSearchInCurrentView}
-        >
-          <Search className="h-4 w-4 mr-2" />
-          현 지도에서 검색
-        </Button>
+      {/* 현재 지도에서 검색 버튼 - 뷰포트 모드일 때만 표시 */}
+      {searchMode === 'viewport' && (
+        <div className="absolute bottom-10 left-0 right-0 z-20 flex justify-center">
+          <Button 
+            variant="default" 
+            className=" px-6 py-2 shadow-lg"
+            // bg-blue-500 hover:bg-blue-600 text-white"
+            onClick={handleSearchInCurrentView}
+          >
+            <Search className="h-4 w-4 mr-2" />
+            현 지도에서 검색
+          </Button>
+        </div>
+      )}
+      
+      {/* 검색 모드 표시 배지 */}
+      <div className="absolute top-4 left-4 z-20 bg-white dark:bg-gray-800 px-2 py-1 rounded-md shadow-md border text-xs font-medium">
+        {searchMode === 'radius' ? 
+          '반경 검색 모드' : 
+          '지도 영역 모드'
+        }
+      </div>
+
+      {/* 표시된 업체 수 배지 */}
+      <div className="absolute top-4 left-[110px] z-20 bg-white dark:bg-gray-800 px-2 py-1 rounded-md shadow-md border text-xs">
+        <span>표시된 업체: </span>
+        <span className="font-medium">{places.length}</span>
+        <span className="text-muted-foreground text-xs ml-1">(최대 200개)</span>
       </div>
     </div>
   );
