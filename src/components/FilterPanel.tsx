@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import type { PlaceCategory, PlaceFilter, Region } from '@/types';
 import { PLACE_CATEGORIES, REGIONS } from '@/types';
+import CategoryCheckbox from './CategoryCheckbox';
 
 interface FilterPanelProps {
   filter: PlaceFilter;
@@ -128,17 +129,12 @@ export default function FilterPanel({ filter, onFilterChange }: FilterPanelProps
         </div>
         <div className="grid grid-cols-1 gap-2">
           {PLACE_CATEGORIES.map(category => (
-            <label
+            <CategoryCheckbox
               key={category}
-              className="flex items-center space-x-2 cursor-pointer py-1"
-            >
-              <Checkbox
-                checked={filter.categories.has(category)}
-                onCheckedChange={() => toggleCategory(category)}
-                id={`category-${category}`}
-              />
-              <span className="text-sm">{category}</span>
-            </label>
+              category={category}
+              isChecked={filter.categories.has(category)}
+              onChange={() => toggleCategory(category)}
+            />
           ))}
         </div>
       </div>
