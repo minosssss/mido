@@ -1,5 +1,5 @@
 // src/App.tsx
-import Layout from '@/components/Layout.tsx';
+import Layout from '@/components/Layout';
 
 export default function App() {
   return (

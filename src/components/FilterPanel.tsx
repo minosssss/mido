@@ -1,171 +1,166 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Slider } from '@/components/ui/slider';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Bookmark } from 'lucide-react';
-import { Separator } from '@/components/ui/separator.tsx';
-import { Button } from '@/components/ui/button.tsx';
+import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Search } from 'lucide-react';
+import type { PlaceCategory, PlaceFilter, Region } from '@/types';
+import { PLACE_CATEGORIES, REGIONS } from '@/types';
 
-type Place = {
-  id: string;
-  name: string;
-  address: string;
-  category: string;
-  lat: number;
-  lng: number;
-};
+interface FilterPanelProps {
+  filter: PlaceFilter;
+  onFilterChange: (filter: PlaceFilter) => void;
+}
 
-const REGIONS = [
-  '전체', '서울', '인천', '경기', '강원', '부산', '울산', '경남',
-  '대구', '경북', '대전', '세종', '충남', '충북', '광주', '전남', '전북', '제주',
-] as const;
-type Region = typeof REGIONS[number];
-
-const CATEGORIES = ['음식점', '카페', '편의점', '약국'] as const;
-type Category = typeof CATEGORIES[number];
-
-export default function FilterPanel({
-                                      places,
-                                      favorites,
-                                      onFavoriteToggle,
-                                    }: {
-  places: Place[];
-  favorites: Set<string>;
-  onFavoriteToggle: (id: string) => void;
-}) {
-  const [region, setRegion] = useState<Region>('전체');
-  const [selectedCats, setSelectedCats] = useState<Set<Category>>(
-    () => new Set(CATEGORIES),
-  );
-  const [distance, setDistance] = useState<number[]>([1000]);
-  const allSelected = selectedCats.size === CATEGORIES.length;
-  const toggleCat = (cat: Category) =>
-    setSelectedCats(prev => {
-      const next = new Set(prev);
-      next.has(cat) ? next.delete(cat) : next.add(cat);
-      return next;
+export default function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
+  // 지역 변경 핸들러
+  const handleRegionChange = (value: string) => {
+    onFilterChange({
+      ...filter,
+      region: value as Region,
     });
+  };
 
-  const filtered = places.filter(
-    p =>
-      (region === '전체' || p.address.includes(region)) &&
-      selectedCats.has(p.category as Category),
-  );
-
-  // 전체 토글 핸들러
-  const handleToggleAll = useCallback(() => {
-    if (selectedCats.size === CATEGORIES.length) {
-      // 이미 모두 선택되어 있으면 전부 해제
-      setSelectedCats(new Set());
+  // 카테고리 토글 핸들러
+  const toggleCategory = (category: PlaceCategory) => {
+    const newCategories = new Set(filter.categories);
+    if (newCategories.has(category)) {
+      newCategories.delete(category);
     } else {
-      // 아니면 전부 선택
-      setSelectedCats(new Set(CATEGORIES));
+      newCategories.add(category);
     }
-  }, [selectedCats]);
+    
+    onFilterChange({
+      ...filter,
+      categories: newCategories,
+    });
+  };
+
+  // 모든 카테고리 토글 핸들러
+  const toggleAllCategories = useCallback(() => {
+    if (filter.categories.size === PLACE_CATEGORIES.length) {
+      // 모두 선택됨 -> 모두 해제
+      onFilterChange({
+        ...filter,
+        categories: new Set<PlaceCategory>()
+      });
+    } else {
+      // 일부만 선택됨 -> 모두 선택
+      onFilterChange({
+        ...filter,
+        categories: new Set<PlaceCategory>(PLACE_CATEGORIES)
+      });
+    }
+  }, [filter, onFilterChange]);
+
+  // 반경 변경 핸들러
+  const handleRadiusChange = (values: number[]) => {
+    onFilterChange({
+      ...filter,
+      radius: values[0],
+    });
+  };
+
+  // 키워드 검색 핸들러
+  const handleKeywordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onFilterChange({
+      ...filter,
+      keyword: e.target.value || undefined,
+    });
+  };
+
+  // 키워드 검색 제출 핸들러
+  const handleKeywordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // 검색 로직은 이미 onChange에서 처리됨
+  };
+
+  const allCategoriesSelected = filter.categories.size === PLACE_CATEGORIES.length;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 1) 고정 필터 섹션 */}
-      <div className="p-4 space-y-6">
-        {/* Region */}
-        <div>
-          <h2 className="mb-2 text-md font-medium">지역</h2>
-          <Select
-            value={region}
-            onValueChange={v => setRegion(v as Region)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              {REGIONS.map(r => (
-                <SelectItem key={r} value={r}>{r}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Separator className="bg-gray-600 dark:bg-gray-200" />
-
-        {/* Category */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-md font-medium">카테고리</h2>
-            <Button
-              size="sm"
-              variant={allSelected ? 'default' : 'outline'}  // 선택 상태에 따라 variant 변경
-              onClick={handleToggleAll}
-            >
-              전체
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map(cat => (
-              <label key={cat} className="flex items-center space-x-1">
-                <Checkbox
-                  checked={selectedCats.has(cat)}
-                  onCheckedChange={() => toggleCat(cat)}
-                />
-                <span className="text-sm">{cat}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-        <Separator className="bg-gray-600 dark:bg-gray-200" />
-
-        {/* Distance */}
-        <div>
-          <div className="mb-2 flex justify-between items-center">
-            <h2 className=" text-md font-medium">검색 반경</h2>
-            <span className="text-sm">{distance[0]}m</span>
-          </div>
-          <Slider
-            value={distance}
-            className="mb-2"
-            onValueChange={vals => setDistance(vals)}
-            min={500}
-            max={5000}
-            step={100}
+    <div className="p-4 space-y-6">
+      {/* 키워드 검색 */}
+      <form onSubmit={handleKeywordSubmit}>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="업체명, 주소, 대표자 검색"
+            value={filter.keyword || ''}
+            onChange={handleKeywordChange}
+            className="pl-8"
           />
         </div>
-        <Separator className="bg-gray-600 dark:bg-gray-200" />
+      </form>
+      <Separator />
+
+      {/* 지역 필터 */}
+      <div>
+        <h2 className="mb-2 text-sm font-medium">지역</h2>
+        <Select
+          value={filter.region}
+          onValueChange={handleRegionChange}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="전체" />
+          </SelectTrigger>
+          <SelectContent>
+            {REGIONS.map(region => (
+              <SelectItem key={region} value={region}>{region}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+      <Separator />
 
-       {/*2) 업체 리스트(카드) — 이 부분만 스크롤*/}
-      <div className="flex flex-col flex-1 p-4 overflow-hidden">
-        <h2 className="mb-2 text-md font-medium">
-          업체 목록 ({filtered.length})
-        </h2>
-        <div className="flex-1 overflow-y-auto space-y-2">
-          {filtered.map(p => (
-            <Card key={p.id} className="hover:shadow-md cursor-pointer p-2">
-              <div className="p-1">
-                {/* 1행: 카테고리 + 북마크 */}
-                <div className="flex justify-between items-center">
-                  <Badge variant="outline">{p.category}</Badge>
-                  <button onClick={() => onFavoriteToggle(p.id)}>
-                    <Bookmark
-                      className={
-                        favorites.has(p.id)
-                          ? 'fill-current text-blue-500'
-                          : ''
-                      }
-                    />
-                  </button>
-                </div>
-                <div className="p-1">
-                  {/* 2행: 업체명 */}
-                  <p className="font-medium">{p.name}</p>
-                  {/* 3행: 주소(트렁케이트) */}
-                  <p className="text-xs text-muted-foreground truncate">
-                    {p.address}
-                  </p>
-                </div>
-
-              </div>
-            </Card>
+      {/* 카테고리 필터 */}
+      <div>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-sm font-medium">카테고리</h2>
+          <Button
+            size="sm"
+            variant={allCategoriesSelected ? "default" : "outline"}
+            onClick={toggleAllCategories}
+          >
+            {allCategoriesSelected ? '전체 해제' : '전체 선택'}
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {PLACE_CATEGORIES.map(category => (
+            <label
+              key={category}
+              className="flex items-center space-x-2 cursor-pointer py-1"
+            >
+              <Checkbox
+                checked={filter.categories.has(category)}
+                onCheckedChange={() => toggleCategory(category)}
+                id={`category-${category}`}
+              />
+              <span className="text-sm">{category}</span>
+            </label>
           ))}
+        </div>
+      </div>
+      <Separator />
+
+      {/* 검색 반경 */}
+      <div>
+        <div className="mb-2 flex justify-between items-center">
+          <h2 className="text-sm font-medium">검색 반경</h2>
+          <span className="text-sm">{filter.radius/1000}KM</span>
+        </div>
+        <Slider
+          defaultValue={[filter.radius]}
+          min={1000}
+          max={400000}
+          step={100}
+          onValueChange={handleRadiusChange}
+          className="mb-2"
+        />
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>1KM</span>
+          <span>400km</span>
         </div>
       </div>
     </div>

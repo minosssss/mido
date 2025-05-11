@@ -1,53 +1,71 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import NaverMap from './NaverMap';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Filter, ListFilter } from 'lucide-react';
 import FilterPanel from './FilterPanel';
-
-type Place = {
-  id: string;
-  name: string;
-  address: string;
-  category: string;
-  lat: number;
-  lng: number;
-};
-
-// 10개 예시 데이터
-const MOCK_PLACES: Place[] = [
-  { id: '1', name: '강남 한식당', address: '서울 강남구 역삼동', category: '음식점', lat: 37.4999, lng: 127.0366 },
-  { id: '2', name: '코엑스 카페', address: '서울 강남구 삼성동', category: '카페', lat: 37.5125, lng: 127.0587 },
-  { id: '3', name: 'GS25 편의점', address: '서울 강남구 논현동', category: '편의점', lat: 37.5080, lng: 127.0265 },
-  { id: '4', name: '올리브영 약국', address: '서울 강남구 대치동', category: '약국', lat: 37.4936, lng: 127.0661 },
-  { id: '5', name: '청담 동물병원', address: '서울 강남구 청담동', category: '약국', lat: 37.5256, lng: 127.0492 },
-  { id: '6', name: '압구정 브런치', address: '서울 강남구 압구정동', category: '음식점', lat: 37.5274, lng: 127.0286 },
-  { id: '7', name: '신사 와인바', address: '서울 강남구 신사동', category: '카페', lat: 37.5172, lng: 127.0208 },
-  { id: '8', name: '역삼 편의점24시', address: '서울 강남구 역삼1동', category: '편의점', lat: 37.5000, lng: 127.0384 },
-  { id: '9', name: '삼성동 한의원', address: '서울 강남구 삼성1동', category: '약국', lat: 37.5100, lng: 127.0590 },
-  { id: '10', name: '논현 숯불구이', address: '서울 강남구 논현2동', category: '음식점', lat: 37.5070, lng: 127.0235 },
-];
+import PlaceList from '@/components/PlaceList';
+import NaverMap from '@/components/NaverMap';
+import useGeolocation from '@/hooks/useGeolocation';
+import usePlaces from '@/hooks/usePlaces';
+import type { PlaceFilter } from '@/types';
+import MOCK_PLACES from '@/data/mockPlaces';
 
 export default function AppLayout() {
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const toggleFav = (id: string) => {
-    setFavorites(prev => {
-      const next = new Set(prev);
-      prev.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-  const [isFilterOpen, setFilterOpen] = useState(false);
+  // 현재 위치 정보 가져오기
+  const { coordinates, loading: locationLoading } = useGeolocation({
+    enableHighAccuracy: true,
+  });
+
+  // 모바일 시트 상태
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // 탭 상태 (필터 / 목록)
+  const [activeTab, setActiveTab] = useState<'filter' | 'list'>('list');
+
+  // 업체 필터링 및 데이터 관리
+  const {
+    filteredPlaces,
+    filter,
+    setFilter,
+    favorites,
+    toggleFavorite,
+    selectedPlace,
+    selectPlace,
+  } = usePlaces(MOCK_PLACES, { userLocation: coordinates });
+
+  // 필터 변경 핸들러
+  const handleFilterChange = useCallback(
+    (newFilter: PlaceFilter) => {
+      setFilter(newFilter);
+    },
+    [setFilter],
+  );
+
+  // 길찾기 핸들러
+  const handleNavigate = useCallback(place => {
+    // 모바일 환경에서 네이버 지도 앱 실행 시도
+    window.location.href = `nmap://route/public?dlat=${place.lat}&dlng=${place.lng}&dname=${encodeURIComponent(place.name)}&appname=${encodeURIComponent('내 주변 업체 찾기')}`;
+
+    // 앱이 설치되지 않은 경우를 대비해 1초 후 웹 버전으로 이동
+    setTimeout(() => {
+      window.open(
+        `https://map.naver.com/v5/directions/-/-/-/transit?c=${place.lng},${place.lat},15,0,0,0,dh&destination=${encodeURIComponent(place.name)}`,
+        '_blank',
+      );
+    }, 1000);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="h-12 flex items-center px-4 shadow-sm z-10">
+      <header className="h-14 flex items-center px-4 shadow-sm z-10">
         <h1 className="text-lg font-semibold">내 주변 업체 찾기</h1>
         <Button
           variant="ghost"
           size="icon"
           className="ml-auto lg:hidden"
-          onClick={() => setFilterOpen(true)}
+          onClick={() => setSheetOpen(true)}
         >
           ☰
         </Button>
@@ -55,40 +73,101 @@ export default function AppLayout() {
 
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Desktop 필터 (h-full 물려받아야) */}
-        <aside className="hidden lg:flex flex-col w-80 border-r h-full">
-          <FilterPanel
-            places={MOCK_PLACES}
-            favorites={favorites}
-            onFavoriteToggle={toggleFav}
-          />
+        {/* Desktop 사이드바 */}
+        <aside className="hidden lg:flex w-80 border-r flex-col h-full">
+          <Tabs
+            defaultValue="list"
+            value={activeTab}
+            onValueChange={v => setActiveTab(v as 'filter' | 'list')}
+            className="h-full flex flex-col"
+          >
+            <TabsList className="grid w-full grid-cols-2 h-12 rounded-none">
+              <TabsTrigger value="filter">
+                <Filter className="mr-2 h-4 w-4" />
+                필터
+              </TabsTrigger>
+              <TabsTrigger value="list">
+                <ListFilter className="mr-2 h-4 w-4" />
+                목록 ({filteredPlaces.length})
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="filter" className="flex-1 m-0 overflow-auto border-0">
+              <FilterPanel filter={filter} onFilterChange={handleFilterChange} />
+            </TabsContent>
+            <TabsContent value="list" className="flex-1 m-0 overflow-hidden border-0">
+              <PlaceList
+                places={filteredPlaces}
+                favorites={favorites}
+                selectedPlace={selectedPlace}
+                onPlaceSelect={selectPlace}
+                onFavoriteToggle={toggleFavorite}
+                onNavigate={handleNavigate}
+              />
+            </TabsContent>
+          </Tabs>
         </aside>
 
         {/* Map */}
         <main className="relative flex-1">
-          <NaverMap width="100%" height="100%" />
+          {locationLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-gray-500">위치 정보를 가져오는 중...</div>
+            </div>
+          ) : (
+            <NaverMap
+              width="100%"
+              height="100%"
+              currentLocation={coordinates}
+              places={filteredPlaces}
+              selectedPlace={selectedPlace}
+              onPlaceSelect={selectPlace}
+              searchRadius={filter.radius}
+            />
+          )}
         </main>
       </div>
 
       {/* Mobile Sheet */}
-      <Sheet open={isFilterOpen} onOpenChange={setFilterOpen}>
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetTrigger asChild>
-          <Button
-            variant="default"
-            className="lg:hidden fixed bottom-4 right-4"
-          >
-            필터 열기
+          <Button variant="default" className="lg:hidden fixed bottom-4 right-4 z-20">
+            필터 / 목록 보기
           </Button>
         </SheetTrigger>
-        <SheetContent
-          side="bottom"
-          className="flex flex-col h-[80vh] p-0 rounded-t-lg"
-        >
-          <FilterPanel
-            places={MOCK_PLACES}
-            favorites={favorites}
-            onFavoriteToggle={toggleFav}
-          />
+        <SheetContent side="bottom" className="flex flex-col h-[80vh] p-0 rounded-t-lg">
+          <Tabs
+            defaultValue="list"
+            value={activeTab}
+            onValueChange={v => setActiveTab(v as 'filter' | 'list')}
+            className="h-full flex flex-col"
+          >
+            <TabsList className="grid w-full grid-cols-2 h-14 rounded-none">
+              <TabsTrigger value="filter" className="text-base">
+                <Filter className="mr-2 h-4 w-4" />
+                필터
+              </TabsTrigger>
+              <TabsTrigger value="list" className="text-base">
+                <ListFilter className="mr-2 h-4 w-4" />
+                목록 ({filteredPlaces.length})
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="filter" className="flex-1 m-0 overflow-auto">
+              <FilterPanel filter={filter} onFilterChange={handleFilterChange} />
+            </TabsContent>
+            <TabsContent value="list" className="flex-1 m-0 overflow-hidden">
+              <PlaceList
+                places={filteredPlaces}
+                favorites={favorites}
+                selectedPlace={selectedPlace}
+                onPlaceSelect={place => {
+                  selectPlace(place);
+                  setSheetOpen(false);
+                }}
+                onFavoriteToggle={toggleFavorite}
+                onNavigate={handleNavigate}
+              />
+            </TabsContent>
+          </Tabs>
         </SheetContent>
       </Sheet>
     </div>
